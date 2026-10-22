@@ -7,15 +7,17 @@ import pyodbc
 from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_engine, koneksi_sql_server
+from etl_config import buat_mysql_engine, koneksi_sql_server, rentang_analisis_default
 
 # koneksi mysql
 mysql_engine = buat_mysql_engine()
 
-tgl_mulai = date.fromisoformat(sys.argv[1]) if len(sys.argv) > 1 else date(2025, 7, 1)
-tgl_akhir = date.fromisoformat(sys.argv[2]) + timedelta(days=1) if len(sys.argv) > 2 else date(2026, 8, 1)
 if len(sys.argv) not in (1, 3):
     raise SystemExit("Gunakan dua tanggal inklusif: stok.py YYYY-MM-DD YYYY-MM-DD")
+awal_default, akhir_default = rentang_analisis_default()
+tgl_mulai = date.fromisoformat(sys.argv[1]) if len(sys.argv) == 3 else awal_default
+tgl_akhir_inklusif = date.fromisoformat(sys.argv[2]) if len(sys.argv) == 3 else akhir_default
+tgl_akhir = tgl_akhir_inklusif + timedelta(days=1)
 if tgl_mulai >= tgl_akhir:
     raise SystemExit("Tanggal mulai harus sama dengan atau sebelum tanggal akhir.")
 

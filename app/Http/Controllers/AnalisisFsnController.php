@@ -9,7 +9,9 @@ class AnalisisFsnController extends PersediaanBaseController
 {
     public function index(Request $r)
     {
-        $q = $this->cari(DB::table('klasifikasi_fsn as f')->join('barang as b', 'b.kode_produk', '=', 'f.kode_produk')
+        $q = $this->cari(DB::table('klasifikasi_fsn as f')->join('barang as b', function ($join) {
+            $join->whereRaw('b.kode_produk COLLATE utf8mb4_unicode_ci = f.kode_produk COLLATE utf8mb4_unicode_ci');
+        })
             ->where('f.id_periode', $this->id), $r)
             ->when($r->kelas, fn ($q, $k) => $q->where('f.kelas_fsn', $k))
             ->orderByDesc('f.tor')

@@ -7,16 +7,18 @@ import pyodbc
 from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_engine, koneksi_sql_server
+from etl_config import buat_mysql_engine, koneksi_sql_server, rentang_analisis_default
 
 # koneksi mysql
 mysql_engine = buat_mysql_engine()
 
-# CLI accepts an inclusive end date. The default retains the original full import window.
-tgl_mulai = date.fromisoformat(sys.argv[1]) if len(sys.argv) > 1 else date(2025, 7, 1)
-tgl_akhir = date.fromisoformat(sys.argv[2]) + timedelta(days=1) if len(sys.argv) > 2 else date(2026, 8, 1)
 if len(sys.argv) not in (1, 3):
     raise SystemExit("Gunakan dua tanggal inklusif: penjualan.py YYYY-MM-DD YYYY-MM-DD")
+awal_default, akhir_default = rentang_analisis_default()
+# CLI end dates are inclusive. Internally the SQL range uses an exclusive end.
+tgl_mulai = date.fromisoformat(sys.argv[1]) if len(sys.argv) == 3 else awal_default
+tgl_akhir_inklusif = date.fromisoformat(sys.argv[2]) if len(sys.argv) == 3 else akhir_default
+tgl_akhir = tgl_akhir_inklusif + timedelta(days=1)
 if tgl_mulai >= tgl_akhir:
     raise SystemExit("Tanggal mulai harus sama dengan atau sebelum tanggal akhir.")
 
@@ -126,7 +128,7 @@ if jumlah_dibuang > 0:
 df_penjualan = df_penjualan[mask_valid]
 if df_penjualan.empty:
     raise ValueError(
-        f"Tidak ada penjualan valid dari SQL Server pada {tgl_mulai} s/d {(tgl_akhir - timedelta(days=1))}. "
+        f"Tidak ada penjualan valid dari SQL Server pada {tgl_mulai} s/d {tgl_akhir_inklusif}. "
         "Data MySQL sebelumnya tidak diubah."
     )
 

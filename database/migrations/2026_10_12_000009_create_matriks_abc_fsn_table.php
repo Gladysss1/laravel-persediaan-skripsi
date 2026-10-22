@@ -12,7 +12,7 @@ return new class extends Migration {
                         $table->integer('id_matriks')->autoIncrement()->primary();
                         $table->integer('id_abc');
                         $table->integer('id_fsn');
-                        $table->string('kode_produk', 50);
+                        $table->string('kode_produk', 50)->nullable()->collation('utf8mb4_0900_ai_ci');
                         $table->char('kategori_matriks', 2)->nullable();
                         $table->string('prioritas_kontrol', 20)->nullable();
                         $table->foreign('id_abc')->references('id_abc')->on('klasifikasi_abc')->cascadeOnDelete();

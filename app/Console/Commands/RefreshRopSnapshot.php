@@ -14,7 +14,11 @@ class RefreshRopSnapshot extends Command
 
     public function handle(): int
     {
-        $idPeriode = DB::table('klasifikasi_abc')->max('id_periode');
+        $idPeriode = DB::table('periode_analisis')
+            ->whereDate('tanggal_mulai', config('etl.analysis_period.start', '2025-07-01'))
+            ->whereDate('tanggal_akhir', config('etl.analysis_period.end', '2026-07-31'))
+            ->orderByDesc('id_periode')
+            ->value('id_periode');
         if (!$idPeriode
             || !DB::table('klasifikasi_fsn')->where('id_periode', $idPeriode)->exists()
             || !DB::table('matriks_abc_fsn as m')
@@ -63,6 +67,8 @@ class RefreshRopSnapshot extends Command
             'ETL_DB_DATABASE' => config('database.connections.mysql.database', 'webskripsi'),
             'ETL_DB_USERNAME' => config('database.connections.mysql.username', 'root'),
             'ETL_DB_PASSWORD' => config('database.connections.mysql.password', ''),
+            'ANALYSIS_START_DATE' => config('etl.analysis_period.start', '2025-07-01'),
+            'ANALYSIS_END_DATE' => config('etl.analysis_period.end', '2026-07-31'),
             'SQLSERVER_DRIVER' => config('etl.sqlserver.driver', 'SQL Server'),
             'SQLSERVER_SERVER' => config('etl.sqlserver.server', 'SERVERBARU1'),
             'SQLSERVER_DATABASE' => config('etl.sqlserver.database', 'dbGrosir'),

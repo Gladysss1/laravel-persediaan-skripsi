@@ -9,7 +9,7 @@ return new class extends Migration {
     {
         if (!Schema::hasTable('supplier')) {
                     Schema::create('supplier', function (Blueprint $table) {
-                        $table->string('kode_supplier', 50)->primary();
+                        $table->string('kode_supplier', 50)->collation('utf8mb4_0900_ai_ci')->primary();
                         $table->string('nama_supplier', 150)->nullable();
                         $table->string('alamat', 255)->nullable();
                         $table->string('kota', 100)->nullable();

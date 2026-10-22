@@ -16,7 +16,13 @@ abstract class PersediaanBaseController extends Controller
 
     public function __construct()
     {
-        $this->id = DB::table('klasifikasi_abc')->max('id_periode');
+        // Semua halaman memakai baseline tahunan yang dikonfigurasi, bukan
+        // periode simulasi atau periode lain yang kebetulan dibuat belakangan.
+        $this->id = DB::table('periode_analisis')
+            ->whereDate('tanggal_mulai', config('etl.analysis_period.start', '2025-07-01'))
+            ->whereDate('tanggal_akhir', config('etl.analysis_period.end', '2026-07-31'))
+            ->orderByDesc('id_periode')
+            ->value('id_periode');
         $this->p = DB::table('periode_analisis')->where('id_periode', $this->id)->first();
         View::share('periode', $this->p);
     }
@@ -34,7 +40,13 @@ abstract class PersediaanBaseController extends Controller
         return DB::table('matriks_abc_fsn as m')
             ->join('klasifikasi_abc as a', 'a.id_abc', '=', 'm.id_abc')
             ->join('klasifikasi_fsn as f', 'f.id_fsn', '=', 'm.id_fsn')
-            ->join('barang as b', 'b.kode_produk', '=', 'm.kode_produk')
+            ->join('barang as b', function ($join) {
+                $join->on(
+                    DB::raw('b.kode_produk COLLATE utf8mb4_unicode_ci'),
+                    '=',
+                    DB::raw('m.kode_produk COLLATE utf8mb4_unicode_ci')
+                );
+            })
             ->where('a.id_periode', $this->id);
     }
 

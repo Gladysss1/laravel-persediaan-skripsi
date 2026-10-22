@@ -1,11 +1,12 @@
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import create_engine, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_url
+from etl_config import buat_mysql_url, rentang_analisis_default
 
 
 class AnalisisABC:
@@ -21,7 +22,7 @@ class AnalisisABC:
         self.tgl_mulai = None
         self.tgl_akhir = None
 
-    # buat table sql
+    # Siapkan tabel MySQL tanpa menghapus tabel atau hasil periode yang sudah ada.
     def siapkan_tabel(self):
         with self.engine.begin() as conn:
             conn.execute(text("""
@@ -29,35 +30,13 @@ class AnalisisABC:
                     id_periode INT AUTO_INCREMENT PRIMARY KEY,
                     tanggal_mulai DATE NOT NULL,
                     tanggal_akhir DATE NOT NULL
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
             """))
-
-          
-            ada_tabel = conn.execute(text(
-                "SELECT COUNT(*) FROM information_schema.tables "
-                "WHERE table_schema = DATABASE() AND table_name = 'klasifikasi_abc'"
-            )).scalar()
-            if ada_tabel:
-                kolom_baru = conn.execute(text(
-                    "SELECT COUNT(*) FROM information_schema.columns "
-                    "WHERE table_schema = DATABASE() AND table_name = 'klasifikasi_abc' "
-                    "AND column_name = 'qty_terjual'"
-                )).scalar()
-                if not kolom_baru:
-                    try:
-                        conn.execute(text("DROP TABLE klasifikasi_abc"))
-                    except Exception as e:
-                        raise RuntimeError(
-                            "Tabel klasifikasi_abc lama tidak bisa dihapus, kemungkinan masih "
-                            "dipakai FOREIGN KEY oleh tabel lain (misalnya matriks_abc_fsn). "
-                            "Hapus tabel yang bergantung padanya dulu, lalu jalankan ulang."
-                        ) from e
-
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS klasifikasi_abc (
                     id_abc INT AUTO_INCREMENT PRIMARY KEY,
                     id_periode INT NOT NULL,
-                    kode_produk VARCHAR(50) NOT NULL,
+                    kode_produk VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
                     nama_produk VARCHAR(100),
                     qty_terjual INT,
                     harga_satuan DECIMAL(18,2),
@@ -68,8 +47,41 @@ class AnalisisABC:
                     kelas_abc CHAR(1),
                     FOREIGN KEY (id_periode) REFERENCES periode_analisis(id_periode),
                     FOREIGN KEY (kode_produk) REFERENCES barang(kode_produk)
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
             """))
+
+            # Jangan DROP tabel lama (hasil analisis bisa direferensikan matriks).
+            # Tambahkan kolom hasil yang belum ada secara non-destruktif.
+            kolom_wajib = {
+                "nama_produk": "VARCHAR(100) NULL",
+                "qty_terjual": "INT NULL",
+                "harga_satuan": "DECIMAL(18,2) NULL",
+                "total_penjualan_produk": "DECIMAL(18,2) NULL",
+                "total_penjualan_semua_produk": "DECIMAL(18,2) NULL",
+                "persentase_nilai": "DECIMAL(8,4) NULL",
+                "persentase_kumulatif": "DECIMAL(8,4) NULL",
+                "kelas_abc": "CHAR(1) NULL",
+            }
+            for nama, tipe in kolom_wajib.items():
+                ada = conn.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = DATABASE() AND table_name = 'klasifikasi_abc' "
+                    "AND column_name = :kolom"
+                ), {"kolom": nama}).scalar()
+                if not ada:
+                    conn.execute(text(f"ALTER TABLE klasifikasi_abc ADD COLUMN {nama} {tipe}"))
+
+            kolom_kunci = conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = DATABASE() AND table_name = 'klasifikasi_abc'"
+            )).scalars().all()
+            hilang = {"id_abc", "id_periode", "kode_produk"} - set(kolom_kunci)
+            if hilang:
+                raise RuntimeError(
+                    "Struktur klasifikasi_abc lama tidak lengkap (kolom: "
+                    + ", ".join(sorted(hilang))
+                    + "). Buat ulang skema melalui migration setelah mencadangkan database."
+                )
         return self
 
     # muat data langsung dr sql
@@ -85,7 +97,11 @@ class AnalisisABC:
                 dp.total_qty,
                 dp.subtotal
             FROM detail_penjualan dp
-            JOIN barang b ON dp.kode_produk = b.kode_produk
+            -- Samakan charset dan collation; detail_penjualan dan barang bisa
+            -- memiliki collation berbeda pada database hasil migrasi/impor.
+            JOIN barang b
+              ON CONVERT(dp.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
+               = CONVERT(b.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
         """
         params = {}
         if tgl_mulai and tgl_akhir:
@@ -143,7 +159,7 @@ class AnalisisABC:
             raise ValueError("Total penjualan 0, klasifikasi ABC tidak bisa dihitung.")
         df_abc["Total_Penjualan_Semua_Produk"] = self.total_semua_penjualan
 
-       #omset terbesar ke terkecil
+        # Omzet terbesar ke terkecil.
         df_abc = df_abc.sort_values(by="Total_Penjualan", ascending=False).reset_index(drop=True)
         df_abc["Persen_Omzet"] = df_abc["Total_Penjualan"] / self.total_semua_penjualan
         df_abc["Persen_Kumulatif"] = df_abc["Persen_Omzet"].cumsum()
@@ -280,6 +296,10 @@ class AnalisisABC:
 
 if __name__ == "__main__":
     analisis = AnalisisABC(db_url=buat_mysql_url())
-    # kosongkan tgl_mulai/tgl_akhir kalau mau pakai seluruh data di detail_penjualan
-    analisis.jalankan(tgl_mulai="2025-07-01", tgl_akhir="2026-08-01")
+    tgl_mulai, tgl_akhir_inklusif = rentang_analisis_default()
+    tgl_akhir_eksklusif = tgl_akhir_inklusif + timedelta(days=1)
+    analisis.jalankan(
+        tgl_mulai=tgl_mulai.isoformat(),
+        tgl_akhir=tgl_akhir_eksklusif.isoformat(),
+    )
     analisis.ringkasan()

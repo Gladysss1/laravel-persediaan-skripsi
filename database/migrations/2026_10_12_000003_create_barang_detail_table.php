@@ -10,7 +10,7 @@ return new class extends Migration {
         if (!Schema::hasTable('barang_detail')) {
                     Schema::create('barang_detail', function (Blueprint $table) {
                         $table->integer('id_barang_detail')->autoIncrement()->primary();
-                        $table->string('kode_produk', 50);
+                        $table->string('kode_produk', 50)->collation('utf8mb4_0900_ai_ci');
                         $table->string('no_id', 10);
                         $table->string('satuan', 20)->nullable();
                         $table->decimal('harga_satuan', 18, 2)->nullable();

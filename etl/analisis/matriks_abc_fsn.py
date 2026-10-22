@@ -93,13 +93,15 @@ class MatriksABCFSN:
 
         # hasil periode terbaru di masing-masing tabel
         self.df_abc = pd.read_sql(text("""
-            SELECT a.id_abc, a.kode_produk, b.nama_produk,
-                   a.total_penjualan_produk, a.kelas_abc
-            FROM klasifikasi_abc a
-            JOIN barang b ON a.kode_produk = b.kode_produk
-            WHERE a.id_periode = :p
-        """), self.engine, params={"p": self.id_periode_abc})
-
+    SELECT a.id_abc, a.kode_produk, b.nama_produk,
+           a.total_penjualan_produk, a.kelas_abc
+    FROM klasifikasi_abc a
+    JOIN barang b
+      ON CONVERT(a.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
+       = CONVERT(b.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
+    WHERE a.id_periode = :p
+"""), self.engine, params={"p": self.id_periode_abc})
+        
         self.df_fsn = pd.read_sql(text("""
             SELECT id_fsn, kode_produk, tor, kelas_fsn
             FROM klasifikasi_fsn

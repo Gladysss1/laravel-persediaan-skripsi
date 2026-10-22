@@ -20,14 +20,16 @@ class PenangananController extends PersediaanBaseController
     {
         $q = $this->cari($this->matriksDasar()
             ->leftJoin('rekomendasi_rop as r', function ($j) {
-                $j->on('r.kode_produk', '=', 'm.kode_produk')->where('r.id_periode', $this->id);
+                $j->whereRaw('r.kode_produk COLLATE utf8mb4_unicode_ci = m.kode_produk COLLATE utf8mb4_unicode_ci')
+                    ->where('r.id_periode', $this->id);
             })
             ->whereIn('f.kelas_fsn', ['S', 'N']), $r)
             ->when($r->kelas, fn ($q, $k) => $q->where('m.kategori_matriks', $k))
             ->orderByRaw("FIELD(f.kelas_fsn, 'N', 'S')")->orderByDesc('r.stok_saat_ini')
             ->selectRaw("b.kode_produk, b.nama_produk, m.kategori_matriks, f.tor, r.stok_saat_ini, r.stok_satuan,
-                (SELECT s.nama_supplier FROM produk_supplier ps JOIN supplier s ON s.kode_supplier = ps.kode_supplier
-                 WHERE ps.kode_produk = m.kode_produk LIMIT 1) AS supplier");
+                (SELECT s.nama_supplier FROM produk_supplier ps
+                 JOIN supplier s ON s.kode_supplier COLLATE utf8mb4_unicode_ci = ps.kode_supplier COLLATE utf8mb4_unicode_ci
+                 WHERE ps.kode_produk COLLATE utf8mb4_unicode_ci = m.kode_produk COLLATE utf8mb4_unicode_ci LIMIT 1) AS supplier");
 
         return $this->tampil('Rekomendasi Penanganan Produk', $q, [
             'kode_produk' => 'Kode', 'nama_produk' => 'Nama Produk', 'kategori_matriks' => 'Kategori', 'tor' => 'TOR',

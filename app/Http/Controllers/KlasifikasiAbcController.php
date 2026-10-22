@@ -9,7 +9,9 @@ class KlasifikasiAbcController extends PersediaanBaseController
 {
     public function index(Request $r)
     {
-        $q = $this->cari(DB::table('klasifikasi_abc as a')->join('barang as b', 'b.kode_produk', '=', 'a.kode_produk')
+        $q = $this->cari(DB::table('klasifikasi_abc as a')->join('barang as b', function ($join) {
+            $join->whereRaw('b.kode_produk COLLATE utf8mb4_unicode_ci = a.kode_produk COLLATE utf8mb4_unicode_ci');
+        })
             ->where('a.id_periode', $this->id), $r)
             ->when($r->kelas, fn ($q, $k) => $q->where('a.kelas_abc', $k))
             ->orderByDesc('a.total_penjualan_produk')

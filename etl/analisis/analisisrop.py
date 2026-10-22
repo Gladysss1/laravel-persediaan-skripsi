@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_url
+from etl_config import buat_mysql_url, rentang_analisis_default
 
 
 def nilai_z(service_level):
@@ -97,13 +97,15 @@ class AnalisisSafetyStockROP:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS produk_supplier (
                     id_produk_supplier INT AUTO_INCREMENT PRIMARY KEY,
-                    kode_produk VARCHAR(50) NOT NULL,
-                    kode_supplier VARCHAR(50) NOT NULL,
+                    kode_produk VARCHAR(50) CHARACTER SET utf8mb4
+                        COLLATE utf8mb4_0900_ai_ci NOT NULL,
+                    kode_supplier VARCHAR(50) CHARACTER SET utf8mb4
+                        COLLATE utf8mb4_0900_ai_ci NOT NULL,
                     lead_time INT,
                     UNIQUE KEY uq_produk_supplier (kode_produk, kode_supplier),
                     FOREIGN KEY (kode_produk) REFERENCES barang(kode_produk),
                     FOREIGN KEY (kode_supplier) REFERENCES supplier(kode_supplier)
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
             """))
 
             # Rebuild skema lama hanya pada analisis normal. Simulasi tidak boleh
@@ -130,7 +132,8 @@ class AnalisisSafetyStockROP:
                 CREATE TABLE IF NOT EXISTS rekomendasi_rop (
                     id_rop INT AUTO_INCREMENT PRIMARY KEY,
                     id_periode INT NOT NULL,
-                    kode_produk VARCHAR(50) NOT NULL,
+                    kode_produk VARCHAR(50) CHARACTER SET utf8mb4
+                        COLLATE utf8mb4_0900_ai_ci NOT NULL,
                     id_produk_supplier INT NULL,
                     id_matriks INT NULL,
                     kategori_matriks CHAR(2),
@@ -152,7 +155,7 @@ class AnalisisSafetyStockROP:
                         REFERENCES produk_supplier(id_produk_supplier) ON DELETE SET NULL,
                     FOREIGN KEY (id_matriks)
                         REFERENCES matriks_abc_fsn(id_matriks) ON DELETE SET NULL
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
             """))
             for kolom in ["tanggal_mulai_data", "tanggal_akhir_data"]:
                 ada = conn.execute(text(
@@ -175,14 +178,20 @@ class AnalisisSafetyStockROP:
 
     # ---------- 2. Periode: ikut periode ABC terbaru ----------
     def tentukan_periode(self):
+        tanggal_mulai, tanggal_akhir = rentang_analisis_default()
         with self.engine.connect() as conn:
             row = conn.execute(text(
                 "SELECT p.id_periode, p.tanggal_mulai, p.tanggal_akhir "
                 "FROM periode_analisis p "
-                "WHERE p.id_periode = (SELECT MAX(id_periode) FROM klasifikasi_abc)"
-            )).fetchone()
+                "JOIN klasifikasi_abc a ON a.id_periode = p.id_periode "
+                "WHERE p.tanggal_mulai = :mulai AND p.tanggal_akhir = :akhir "
+                "ORDER BY p.id_periode DESC LIMIT 1"
+            ), {"mulai": tanggal_mulai, "akhir": tanggal_akhir}).fetchone()
         if row is None:
-            raise ValueError("Tabel klasifikasi_abc masih kosong. Jalankan analisis_abc.py dulu.")
+            raise ValueError(
+                "Baseline ABC tahunan belum tersedia untuk "
+                f"{tanggal_mulai} s/d {tanggal_akhir}. Jalankan analisis ABC tahunan dulu."
+            )
         self.id_periode = row[0]
         self.tgl_periode_mulai = pd.Timestamp(row[1]).normalize()
         self.tgl_periode_akhir = pd.Timestamp(row[2]).normalize()
@@ -207,7 +216,9 @@ class AnalisisSafetyStockROP:
                    CONCAT(a.kelas_abc, f.kelas_fsn) AS kategori_matriks
             FROM klasifikasi_abc a
             JOIN klasifikasi_fsn f
-                 ON f.kode_produk = a.kode_produk AND f.id_periode = a.id_periode
+                 ON f.kode_produk COLLATE utf8mb4_unicode_ci
+                    = a.kode_produk COLLATE utf8mb4_unicode_ci
+                AND f.id_periode = a.id_periode
             LEFT JOIN matriks_abc_fsn m ON m.id_abc = a.id_abc
             WHERE a.id_periode = :p
         """), self.engine, params={"p": self.id_periode})
@@ -268,7 +279,9 @@ class AnalisisSafetyStockROP:
                 SELECT ps.id_produk_supplier, ps.kode_produk, ps.kode_supplier,
                        COALESCE(s.lead_time, ps.lead_time) AS lead_time
                 FROM produk_supplier ps
-                LEFT JOIN supplier s ON s.kode_supplier = ps.kode_supplier
+                LEFT JOIN supplier s
+                    ON s.kode_supplier COLLATE utf8mb4_unicode_ci
+                       = ps.kode_supplier COLLATE utf8mb4_unicode_ci
             """),
             self.engine,
         )

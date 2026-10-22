@@ -1,6 +1,7 @@
 """Shared connection settings for the Laravel-launched ETL scripts."""
 
 import os
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import URL, create_engine
@@ -31,6 +32,20 @@ def _load_project_env():
         else:
             value = value.split(" #", 1)[0].strip()
         os.environ.setdefault(key, value)
+
+
+def rentang_analisis_default():
+    """Return the fixed annual analysis window as inclusive dates.
+
+    Configure ANALYSIS_START_DATE and ANALYSIS_END_DATE in Laravel's .env.
+    The SQL scripts convert the inclusive end date to an exclusive boundary.
+    """
+    _load_project_env()
+    mulai = date.fromisoformat(os.getenv("ANALYSIS_START_DATE", "2025-07-01"))
+    akhir = date.fromisoformat(os.getenv("ANALYSIS_END_DATE", "2026-07-31"))
+    if mulai > akhir:
+        raise ValueError("ANALYSIS_START_DATE harus sebelum atau sama dengan ANALYSIS_END_DATE.")
+    return mulai, akhir
 
 
 def buat_mysql_url():

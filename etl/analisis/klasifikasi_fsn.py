@@ -1,11 +1,12 @@
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import create_engine, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_url
+from etl_config import buat_mysql_url, rentang_analisis_default
 
 # total_qty_real sudah bertanda: positif = stok masuk, negatif = stok keluar
 KOLOM_QTY = "total_qty_real"
@@ -88,14 +89,16 @@ class AnalisisFSN:
                 CREATE TABLE IF NOT EXISTS klasifikasi_fsn (
                     id_fsn INT AUTO_INCREMENT PRIMARY KEY,
                     id_periode INT NOT NULL,
-                    kode_produk VARCHAR(50) NOT NULL,
+                    -- Samakan charset/collation dengan barang.kode_produk agar FK valid.
+                    kode_produk VARCHAR(50) CHARACTER SET utf8mb4
+                        COLLATE utf8mb4_0900_ai_ci NOT NULL,
                     total_kuantitas_penjualan DECIMAL(18,2),
                     rata_rata_persediaan DECIMAL(18,2),
                     tor DECIMAL(18,4),
                     kelas_fsn CHAR(1),
                     FOREIGN KEY (id_periode) REFERENCES periode_analisis(id_periode),
                     FOREIGN KEY (kode_produk) REFERENCES barang(kode_produk)
-                )
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
             """))
             # kalau tabel lama sudah ada tapi belum punya kolom tor, tambahkan
             ada_tor = conn.execute(text(
@@ -327,6 +330,6 @@ class AnalisisFSN:
 
 if __name__ == "__main__":
     analisis = AnalisisFSN(db_url=buat_mysql_url())
-    # kosongkan tgl_mulai/tgl_akhir kalau mau pakai seluruh data di tabel stok
-    analisis.jalankan(tgl_mulai="2025-07-01", tgl_akhir="2026-08-01")
+    tgl_mulai, tgl_akhir_inklusif = rentang_analisis_default()
+    analisis.jalankan(tgl_mulai=tgl_mulai.isoformat(), tgl_akhir=(tgl_akhir_inklusif + timedelta(days=1)).isoformat())
     analisis.ringkasan()

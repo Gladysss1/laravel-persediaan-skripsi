@@ -11,7 +11,7 @@ return new class extends Migration {
                     Schema::create('klasifikasi_fsn', function (Blueprint $table) {
                         $table->integer('id_fsn')->autoIncrement()->primary();
                         $table->integer('id_periode');
-                        $table->string('kode_produk', 50);
+                        $table->string('kode_produk', 50)->nullable()->collation('utf8mb4_0900_ai_ci');
                         $table->decimal('total_kuantitas_penjualan', 18, 2)->nullable();
                         $table->decimal('rata_rata_persediaan', 18, 2)->nullable();
                         $table->decimal('tor', 18, 4)->nullable();

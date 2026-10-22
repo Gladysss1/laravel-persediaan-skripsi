@@ -11,7 +11,7 @@ return new class extends Migration {
                     Schema::create('rekomendasi_rop', function (Blueprint $table) {
                         $table->integer('id_rop')->autoIncrement()->primary();
                         $table->integer('id_periode');
-                        $table->string('kode_produk', 50);
+                        $table->string('kode_produk', 50)->nullable()->collation('utf8mb4_0900_ai_ci');
                         $table->integer('id_produk_supplier')->nullable();
                         $table->integer('id_matriks')->nullable();
                         $table->char('kategori_matriks', 2)->nullable();

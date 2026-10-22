@@ -1,6 +1,9 @@
 @extends('layouts.app')
 @section('judul', 'Dashboard')
 @section('isi')
+@if (!empty($analisisNotice))
+    <div class="mb-4 p-3 rounded bg-amber-100 text-amber-900" role="status">{{ $analisisNotice }}</div>
+@endif
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     @foreach ([
         ['Produk Kelas A', $abc['A'] ?? 0, 'text-blue-600'],

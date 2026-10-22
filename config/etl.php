@@ -10,6 +10,11 @@ return [
     'python_path' => env('PYTHONPATH', ''),
     'python_hash_seed' => env('PYTHONHASHSEED', '0'),
 
+    'analysis_period' => [
+        'start' => env('ANALYSIS_START_DATE', '2025-07-01'),
+        'end' => env('ANALYSIS_END_DATE', '2026-07-31'),
+    ],
+
     'rop_auto_refresh' => [
         'enabled' => filter_var(env('ROP_AUTO_REFRESH_ENABLED', false), FILTER_VALIDATE_BOOL),
         'interval_minutes' => max(1, (int) env('ROP_AUTO_REFRESH_INTERVAL_MINUTES', 15)),

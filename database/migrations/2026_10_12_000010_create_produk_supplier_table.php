@@ -10,8 +10,8 @@ return new class extends Migration {
         if (!Schema::hasTable('produk_supplier')) {
                     Schema::create('produk_supplier', function (Blueprint $table) {
                         $table->integer('id_produk_supplier')->autoIncrement()->primary();
-                        $table->string('kode_produk', 50);
-                        $table->string('kode_supplier', 50);
+                        $table->string('kode_produk', 50)->collation('utf8mb4_0900_ai_ci');
+                        $table->string('kode_supplier', 50)->collation('utf8mb4_0900_ai_ci');
                         $table->integer('lead_time')->nullable();
                         $table->unique(['kode_produk', 'kode_supplier'], 'uq_produk_supplier');
                         $table->foreign('kode_produk')->references('kode_produk')->on('barang');

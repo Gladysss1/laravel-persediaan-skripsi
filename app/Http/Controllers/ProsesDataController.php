@@ -40,7 +40,11 @@ class ProsesDataController extends PersediaanBaseController
         if ($simulasi) {
             // Simulasi hanya sah jika klasifikasi yang akan dipakai sudah tersedia.
             // Pemeriksaan ini mencegah data Agustus terlanjur diimpor tanpa hasil ROP.
-            $idPeriodeAktif = DB::table('klasifikasi_abc')->max('id_periode');
+            $idPeriodeAktif = DB::table('periode_analisis')
+                ->whereDate('tanggal_mulai', config('etl.analysis_period.start', '2025-07-01'))
+                ->whereDate('tanggal_akhir', config('etl.analysis_period.end', '2026-07-31'))
+                ->orderByDesc('id_periode')
+                ->value('id_periode');
             if (!$idPeriodeAktif
                 || !DB::table('klasifikasi_fsn')->where('id_periode', $idPeriodeAktif)->exists()
                 || !DB::table('matriks_abc_fsn as m')
@@ -50,17 +54,20 @@ class ProsesDataController extends PersediaanBaseController
             }
 
             $skrip = [
-                ['data/penjualan.py', $r->tanggal_mulai, $r->tanggal_akhir],
+                // Simulasi status cukup memperbarui pergerakan stok pada rentang
+                // yang dipilih. Penjualan/angka tahunan tidak disentuh.
                 ['data/stok.py', $r->tanggal_mulai, $r->tanggal_akhir],
                 ['analisis/analisisrop.py', '--tanggal-mulai', $r->tanggal_mulai, '--tanggal-akhir', $r->tanggal_akhir],
             ];
-        } elseif ($ropAktif || $r->mode === 'analisis') {
-            // Analisis ulang dari tombol dashboard sengaja hanya menjalankan ROP.
-            // ABC, FSN, dan matriks tetap menggunakan hasil periode aktif.
+        } elseif ($ropAktif) {
+            // Refresh ROP aktif saja; tidak menarik sumber dan tidak menjalankan ulang ABC/FSN/matriks.
             $skrip = [['analisis/analisisrop.py']];
+        } elseif ($r->mode === 'analisis') {
+            // Buat/perbarui baseline analisis tahunan dari data MySQL yang sudah ada.
+            // Tidak menjalankan skrip ETL penarikan dari SQL Server.
+            $skrip = array_map(fn ($path) => [$path], self::ANALISIS);
         } else {
-            $skrip = $r->mode === 'penuh' ? array_merge(self::TARIK, self::ANALISIS) : self::ANALISIS;
-            $skrip = array_map(fn ($path) => [$path], $skrip);
+            $skrip = array_map(fn ($path) => [$path], array_merge(self::TARIK, self::ANALISIS));
         }
         $mulai = now();
         $gagal = null;
@@ -92,6 +99,8 @@ class ProsesDataController extends PersediaanBaseController
             'ETL_DB_DATABASE' => config('database.connections.mysql.database', 'webskripsi'),
             'ETL_DB_USERNAME' => config('database.connections.mysql.username', 'root'),
             'ETL_DB_PASSWORD' => config('database.connections.mysql.password', ''),
+            'ANALYSIS_START_DATE' => config('etl.analysis_period.start', '2025-07-01'),
+            'ANALYSIS_END_DATE' => config('etl.analysis_period.end', '2026-07-31'),
             // Make user-installed Python packages visible to the Laravel subprocess.
             'PYTHONPATH' => config('etl.python_path', ''),
             'SQLSERVER_DRIVER' => config('etl.sqlserver.driver', 'SQL Server'),
@@ -103,7 +112,8 @@ class ProsesDataController extends PersediaanBaseController
             'PYTHONHASHSEED' => config('etl.python_hash_seed', '0'),
         ];
 
-        // Script analisis tidak perlu driver pyodbc; proses tarik data dari SQL Server perlu.
+        // Analisis dari MySQL tidak memerlukan pyodbc. Simulasi dan impor penuh
+        // mengambil stok/penjualan dari SQL Server.
         $butuhSqlServer = $r->mode === 'penuh' || $simulasi;
         $modulPython = $butuhSqlServer
             ? 'import pandas, numpy, sqlalchemy, pymysql, pyodbc'
@@ -149,11 +159,15 @@ class ProsesDataController extends PersediaanBaseController
         } catch (\Throwable $e) {
         }
 
-        $pesan = $simulasi
-            ? "Simulasi {$r->tanggal_mulai} s/d {$r->tanggal_akhir} selesai. Stok dan status reorder diperbarui; rata-rata tahunan, Safety Stock, ROP, ABC, FSN, dan matriks tetap."
-            : ($ropAktif || $r->mode === 'analisis'
-                ? 'ROP dihitung ulang memakai periode ABC aktif. ABC, FSN, dan matriks tidak dijalankan.'
-                : 'Proses selesai. Data sudah diperbarui.');
+        if ($simulasi) {
+            $pesan = "Simulasi stok {$r->tanggal_mulai} s/d {$r->tanggal_akhir} selesai. Stok dan status reorder diperbarui; data penjualan, rata-rata tahunan, Safety Stock, ROP, ABC, FSN, dan matriks tetap.";
+        } elseif ($ropAktif) {
+            $pesan = 'ROP dihitung ulang memakai periode ABC aktif. ABC, FSN, dan matriks tidak dijalankan.';
+        } elseif ($r->mode === 'analisis') {
+            $pesan = 'Analisis tahunan ABC, FSN, matriks, dan ROP selesai memakai data yang sudah ada di MySQL. Tidak ada data ditarik dari SQL Server.';
+        } else {
+            $pesan = 'Proses selesai. Data sudah diperbarui.';
+        }
         return back()->with($gagal ? 'gagal' : 'ok', $gagal ?: $pesan);
     }
 }
