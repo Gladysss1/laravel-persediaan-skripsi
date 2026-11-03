@@ -9,9 +9,7 @@
     @endif
 </form>
 
-<div class="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-    Isi lead time manual dalam hari untuk setiap supplier. Nilai ini tidak dihitung dari tanggal transaksi dan berlaku ke semua produk yang terhubung ke supplier tersebut. Saat disimpan, rekomendasi ROP produk terkait dihitung ulang; ABC, FSN, dan matriks tidak berubah.
-</div>
+
 
 @if ($rows->isNotEmpty())
     <form method="POST" action="{{ route('supplier.simpan-semua') }}">

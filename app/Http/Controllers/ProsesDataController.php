@@ -8,9 +8,6 @@ use Illuminate\Support\Facades\Process;
 
 class ProsesDataController extends PersediaanBaseController
 {
-    // Urutan skrip Python; folder = ETL_PATH
-    private const TARIK = ['data/barang.py', 'data/supplier.py', 'data/barang_dtl.py', 'data/penjualan.py',
-        'data/stok.py', 'data/produk_supplier.py'];
     private const ANALISIS = ['analisis/klasifikasi_abc.py', 'analisis/klasifikasi_fsn.py',
         'analisis/matriks_abc_fsn.py', 'analisis/analisisrop.py'];
 
@@ -31,20 +28,16 @@ class ProsesDataController extends PersediaanBaseController
     {
         set_time_limit(0);
         $r->validate([
-            'mode' => ['required', 'in:analisis,penuh,simulasi_rop,rop_aktif'],
+            // Penarikan penuh dinonaktifkan, tetapi analisis tahunan MySQL tetap tersedia.
+            'mode' => ['required', 'in:analisis,simulasi_rop,rop_aktif'],
             'tanggal_mulai' => ['required_if:mode,simulasi_rop', 'nullable', 'date'],
             'tanggal_akhir' => ['required_if:mode,simulasi_rop', 'nullable', 'date', 'after_or_equal:tanggal_mulai'],
         ]);
         $simulasi = $r->mode === 'simulasi_rop';
-        $ropAktif = $r->mode === 'rop_aktif';
         if ($simulasi) {
             // Simulasi hanya sah jika klasifikasi yang akan dipakai sudah tersedia.
             // Pemeriksaan ini mencegah data Agustus terlanjur diimpor tanpa hasil ROP.
-            $idPeriodeAktif = DB::table('periode_analisis')
-                ->whereDate('tanggal_mulai', config('etl.analysis_period.start', '2025-07-01'))
-                ->whereDate('tanggal_akhir', config('etl.analysis_period.end', '2026-07-31'))
-                ->orderByDesc('id_periode')
-                ->value('id_periode');
+            $idPeriodeAktif = DB::table('klasifikasi_abc')->max('id_periode');
             if (!$idPeriodeAktif
                 || !DB::table('klasifikasi_fsn')->where('id_periode', $idPeriodeAktif)->exists()
                 || !DB::table('matriks_abc_fsn as m')
@@ -54,20 +47,17 @@ class ProsesDataController extends PersediaanBaseController
             }
 
             $skrip = [
-                // Simulasi status cukup memperbarui pergerakan stok pada rentang
-                // yang dipilih. Penjualan/angka tahunan tidak disentuh.
+                ['data/penjualan.py', $r->tanggal_mulai, $r->tanggal_akhir],
                 ['data/stok.py', $r->tanggal_mulai, $r->tanggal_akhir],
                 ['analisis/analisisrop.py', '--tanggal-mulai', $r->tanggal_mulai, '--tanggal-akhir', $r->tanggal_akhir],
             ];
-        } elseif ($ropAktif) {
-            // Refresh ROP aktif saja; tidak menarik sumber dan tidak menjalankan ulang ABC/FSN/matriks.
-            $skrip = [['analisis/analisisrop.py']];
         } elseif ($r->mode === 'analisis') {
-            // Buat/perbarui baseline analisis tahunan dari data MySQL yang sudah ada.
-            // Tidak menjalankan skrip ETL penarikan dari SQL Server.
+            // Jalankan analisis periode tahunan dari data yang sudah ada di MySQL.
             $skrip = array_map(fn ($path) => [$path], self::ANALISIS);
         } else {
-            $skrip = array_map(fn ($path) => [$path], array_merge(self::TARIK, self::ANALISIS));
+            // Refresh nilai/status ROP dari data lokal yang sudah tersimpan.
+            // Tidak menjalankan penarikan data, ABC, FSN, atau matriks.
+            $skrip = [['analisis/analisisrop.py']];
         }
         $mulai = now();
         $gagal = null;
@@ -99,8 +89,6 @@ class ProsesDataController extends PersediaanBaseController
             'ETL_DB_DATABASE' => config('database.connections.mysql.database', 'webskripsi'),
             'ETL_DB_USERNAME' => config('database.connections.mysql.username', 'root'),
             'ETL_DB_PASSWORD' => config('database.connections.mysql.password', ''),
-            'ANALYSIS_START_DATE' => config('etl.analysis_period.start', '2025-07-01'),
-            'ANALYSIS_END_DATE' => config('etl.analysis_period.end', '2026-07-31'),
             // Make user-installed Python packages visible to the Laravel subprocess.
             'PYTHONPATH' => config('etl.python_path', ''),
             'SQLSERVER_DRIVER' => config('etl.sqlserver.driver', 'SQL Server'),
@@ -112,9 +100,8 @@ class ProsesDataController extends PersediaanBaseController
             'PYTHONHASHSEED' => config('etl.python_hash_seed', '0'),
         ];
 
-        // Analisis dari MySQL tidak memerlukan pyodbc. Simulasi dan impor penuh
-        // mengambil stok/penjualan dari SQL Server.
-        $butuhSqlServer = $r->mode === 'penuh' || $simulasi;
+        // Hanya simulasi yang mengambil transaksi/stok dari SQL Server.
+        $butuhSqlServer = $simulasi;
         $modulPython = $butuhSqlServer
             ? 'import pandas, numpy, sqlalchemy, pymysql, pyodbc'
             : 'import pandas, numpy, sqlalchemy, pymysql';
@@ -160,13 +147,11 @@ class ProsesDataController extends PersediaanBaseController
         }
 
         if ($simulasi) {
-            $pesan = "Simulasi stok {$r->tanggal_mulai} s/d {$r->tanggal_akhir} selesai. Stok dan status reorder diperbarui; data penjualan, rata-rata tahunan, Safety Stock, ROP, ABC, FSN, dan matriks tetap.";
-        } elseif ($ropAktif) {
-            $pesan = 'ROP dihitung ulang memakai periode ABC aktif. ABC, FSN, dan matriks tidak dijalankan.';
+            $pesan = "Simulasi {$r->tanggal_mulai} s/d {$r->tanggal_akhir} selesai. Stok dan status reorder diperbarui; rata-rata tahunan, Safety Stock, ROP, ABC, FSN, dan matriks tetap.";
         } elseif ($r->mode === 'analisis') {
-            $pesan = 'Analisis tahunan ABC, FSN, matriks, dan ROP selesai memakai data yang sudah ada di MySQL. Tidak ada data ditarik dari SQL Server.';
+            $pesan = 'Analisis tahunan ABC, FSN, matriks, dan ROP selesai memakai data yang sudah tersimpan di MySQL.';
         } else {
-            $pesan = 'Proses selesai. Data sudah diperbarui.';
+            $pesan = 'ROP dihitung ulang memakai periode ABC aktif. ABC, FSN, dan matriks tidak dijalankan.';
         }
         return back()->with($gagal ? 'gagal' : 'ok', $gagal ?: $pesan);
     }

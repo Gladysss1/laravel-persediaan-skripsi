@@ -28,7 +28,6 @@
                 @csrf
                 <button name="mode" value="rop_aktif" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-2 text-sm">Analisis Ulang ROP Saja</button>
                 <button name="mode" value="analisis" class="w-full bg-blue-700 hover:bg-blue-800 text-white rounded px-3 py-2 text-sm">Analisis Tahunan dari Data MySQL</button>
-                <button name="mode" value="penuh" class="w-full bg-slate-700 hover:bg-slate-600 text-white rounded px-3 py-2 text-sm">Tarik Data + Analisis ABC, FSN, Matriks & ROP</button>
                 <div class="rounded border border-slate-700 p-2 space-y-2">
                     <div class="text-xs font-medium text-slate-200">Simulasi ROP per rentang tanggal</div>
                     <label class="block text-xs text-slate-400">Dari
@@ -38,7 +37,7 @@
                         <input type="date" name="tanggal_akhir" value="2026-08-19" class="mt-1 w-full rounded px-2 py-1 text-slate-800">
                     </label>
                     <button name="mode" value="simulasi_rop" class="w-full bg-amber-600 hover:bg-amber-700 text-white rounded px-3 py-2 text-sm">Tarik & Simulasikan ROP</button>
-                    <div class="text-xs text-slate-400">Menarik pergerakan stok pada rentang ini dan memperbarui stok serta status reorder. Data penjualan, rata-rata tahunan, Safety Stock, ROP, ABC, FSN, dan matriks tetap.</div>
+                    <div class="text-xs text-slate-400">Menarik data penjualan dan stok pada rentang ini, lalu memperbarui stok serta status reorder. Rata-rata tahunan, Safety Stock, ROP, ABC, FSN, dan matriks tetap.</div>
                 </div>
                 <div id="proses" class="hidden text-xs text-amber-300">Memproses, mohon tunggu...</div>
             </form>

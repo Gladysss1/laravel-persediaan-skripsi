@@ -326,14 +326,16 @@ class AnalisisSafetyStockROP:
 
     # ---------- 6. Stok saat ini (akhir periode) ----------
     def hitung_stok_saat_ini(self):
-        """Stok = saldo berjalan dari semua pergerakan di tabel stok sampai akhir periode
-        (urut tanggal lalu id_stok). Kalau saldo pernah negatif (saldo awal tidak tercatat),
-        stok awal diperkirakan sebesar kebutuhan agar saldo tidak pernah negatif."""
+        """Hitung saldo berjalan dari seluruh pergerakan stok yang tersedia sampai akhir periode.
+
+        Perhitungan dimulai dari nol pada awal riwayat yang diimpor (default ETL: 2019-01-01)
+        dan tidak menambahkan stok awal perkiraan. Karena itu, tabel stok harus sudah memuat
+        seluruh pergerakan sejak tanggal awal riwayat yang dijadikan baseline.
+        """
         g = self.df_stok.sort_values(["kode_produk", "tanggal", "id_stok"]).copy()
         g["saldo"] = g.groupby("kode_produk")["gerak"].cumsum()
-        stok_awal = (-g.groupby("kode_produk")["saldo"].min()).clip(lower=0)
         saldo_akhir = g.groupby("kode_produk")["saldo"].last()
-        self.stok_saat_ini = (saldo_akhir + stok_awal).rename("stok_saat_ini")
+        self.stok_saat_ini = saldo_akhir.rename("stok_saat_ini")
         return self
 
     # ---------- 7. Safety stock dan ROP ----------

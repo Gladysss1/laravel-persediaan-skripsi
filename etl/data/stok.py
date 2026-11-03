@@ -7,16 +7,19 @@ import pyodbc
 from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_engine, koneksi_sql_server, rentang_analisis_default
+from etl_config import buat_mysql_engine, koneksi_sql_server
 
 # koneksi mysql
 mysql_engine = buat_mysql_engine()
 
 if len(sys.argv) not in (1, 3):
     raise SystemExit("Gunakan dua tanggal inklusif: stok.py YYYY-MM-DD YYYY-MM-DD")
-awal_default, akhir_default = rentang_analisis_default()
-tgl_mulai = date.fromisoformat(sys.argv[1]) if len(sys.argv) == 3 else awal_default
-tgl_akhir_inklusif = date.fromisoformat(sys.argv[2]) if len(sys.argv) == 3 else akhir_default
+
+# Riwayat stok diimpor terpisah dari periode analisis tahunan.
+# Default: ambil seluruh pergerakan sejak awal data (2019) sampai hari ini.
+# Jika ingin rentang khusus, berikan tanggal mulai dan akhir pada command line.
+tgl_mulai = date.fromisoformat(sys.argv[1]) if len(sys.argv) == 3 else date(2019, 1, 1)
+tgl_akhir_inklusif = date.fromisoformat(sys.argv[2]) if len(sys.argv) == 3 else date.today()
 tgl_akhir = tgl_akhir_inklusif + timedelta(days=1)
 if tgl_mulai >= tgl_akhir:
     raise SystemExit("Tanggal mulai harus sama dengan atau sebelum tanggal akhir.")
@@ -29,7 +32,7 @@ with mysql_engine.begin() as conn:
             no_transaksi VARCHAR(50),
             tanggal DATE,
             kode_produk VARCHAR(50),
-            nama_produk VARCHAR(50),
+            nama_produk VARCHAR(150),
             total_qty DECIMAL(18,2),
             total_qty_real DECIMAL(18,2),
             FOREIGN KEY (kode_produk) REFERENCES barang(kode_produk)
@@ -91,5 +94,6 @@ with mysql_engine.begin() as conn:
     df_stok.to_sql("stok", conn, if_exists="append", index=False, chunksize=1000)
 
 print(f"{len(df_stok)} baris stok berhasil disimpan ke MySQL.")
+print(f"Riwayat stok yang diimpor: {tgl_mulai} s/d {tgl_akhir_inklusif} (inklusif).")
 if df_stok.empty:
     print("Tidak ada pergerakan stok valid pada rentang ini; data sebelumnya dipertahankan.")

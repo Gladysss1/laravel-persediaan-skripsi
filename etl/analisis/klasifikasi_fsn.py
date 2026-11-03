@@ -1,12 +1,11 @@
 import sys
-from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import create_engine, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_url, rentang_analisis_default
+from etl_config import buat_mysql_url
 
 # total_qty_real sudah bertanda: positif = stok masuk, negatif = stok keluar
 KOLOM_QTY = "total_qty_real"
@@ -33,7 +32,7 @@ KURANGI_RETUR_JUAL = False
 #   TOR >  BATAS_FAST                  -> F (Fast-Moving)
 #   BATAS_SLOW <= TOR <= BATAS_FAST    -> S (Slow-Moving)
 #   TOR <  BATAS_SLOW                  -> N (Non-Moving)
-BATAS_FAST = 8
+BATAS_FAST = 12
 BATAS_SLOW = 4
 
 # True = TOR disetarakan ke 12 bulan (TOR x 365 / jumlah hari periode),
@@ -41,8 +40,8 @@ BATAS_SLOW = 4
 # False = TOR apa adanya untuk seluruh periode.
 NORMALISASI_TAHUNAN = True
 
-# Rata-rata persediaan di bawah nilai ini dianggap terlalu kecil sehingga TOR-nya
-# bisa menggelembung. Produknya ditandai di kolom Persediaan_Minim (hanya di CSV).
+# Untuk TOR, rata-rata stok di bawah 1 pcs menggunakan denominator minimum 1 pcs.
+# Ini mencegah rata-rata pecahan yang sangat kecil membuat TOR dan kelas F melonjak.
 BATAS_PERSEDIAAN_MINIM = 1
 
 
@@ -70,6 +69,7 @@ class AnalisisFSN:
         self.engine = create_engine(db_url)
         self.df_stok = None
         self.df_fsn = None
+        self.df_fsn_dikecualikan = None
         self.qty_jual = None
         self.id_periode = None
         self.tgl_mulai = None
@@ -89,16 +89,14 @@ class AnalisisFSN:
                 CREATE TABLE IF NOT EXISTS klasifikasi_fsn (
                     id_fsn INT AUTO_INCREMENT PRIMARY KEY,
                     id_periode INT NOT NULL,
-                    -- Samakan charset/collation dengan barang.kode_produk agar FK valid.
-                    kode_produk VARCHAR(50) CHARACTER SET utf8mb4
-                        COLLATE utf8mb4_0900_ai_ci NOT NULL,
+                    kode_produk VARCHAR(50) NOT NULL,
                     total_kuantitas_penjualan DECIMAL(18,2),
                     rata_rata_persediaan DECIMAL(18,2),
                     tor DECIMAL(18,4),
                     kelas_fsn CHAR(1),
                     FOREIGN KEY (id_periode) REFERENCES periode_analisis(id_periode),
                     FOREIGN KEY (kode_produk) REFERENCES barang(kode_produk)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+                )
             """))
             # kalau tabel lama sudah ada tapi belum punya kolom tor, tambahkan
             ada_tor = conn.execute(text(
@@ -213,14 +211,17 @@ class AnalisisFSN:
         # produk yang tidak pernah terjual = 0 (bukan 1)
         df_fsn["Total_Qty_Jual"] = df_fsn["Total_Qty_Jual"].fillna(0)
 
-        # tandai produk dengan persediaan terlalu kecil (TOR-nya bisa menggelembung)
+        # Produk dengan rata-rata persediaan <= 1 pcs tidak dimasukkan ke
+        # klasifikasi FSN karena TOR-nya tidak representatif (penyebut terlalu kecil).
         df_fsn["Persediaan_Minim"] = df_fsn["Rata_Persediaan"] <= BATAS_PERSEDIAAN_MINIM
+        self.df_fsn_dikecualikan = df_fsn[df_fsn["Persediaan_Minim"]].copy()
+        df_fsn = df_fsn[~df_fsn["Persediaan_Minim"]].copy()
 
-        # rata-rata persediaan 0 atau kurang diberi nilai 1 supaya TOR tidak error
-        df_fsn["Rata_Persediaan"] = df_fsn["Rata_Persediaan"].where(df_fsn["Rata_Persediaan"] > 0, 1)
+        # Nilai rata-rata persediaan yang lolos filter tetap memakai nilai asli.
+        denominator_tor = df_fsn["Rata_Persediaan"].clip(lower=BATAS_PERSEDIAAN_MINIM)
 
-        # TOR = Total Kuantitas Penjualan / Rata-rata Persediaan
-        df_fsn["TOR"] = df_fsn["Total_Qty_Jual"] / df_fsn["Rata_Persediaan"]
+        # TOR = Total Kuantitas Penjualan / Rata-rata Persediaan (minimum 1 pcs)
+        df_fsn["TOR"] = df_fsn["Total_Qty_Jual"] / denominator_tor
 
         # setarakan ke 12 bulan supaya TOR = perputaran per tahun
         self.jumlah_hari = (self.tgl_akhir - self.tgl_mulai).days + 1
@@ -234,6 +235,9 @@ class AnalisisFSN:
     # ---------- 4. Simpan cadangan ke CSV ----------
     def simpan_csv(self, path_output="Data_Klasifikasi_FSN.csv"):
         self.df_fsn.to_csv(path_output, index=False, encoding="utf-8-sig")
+        if self.df_fsn_dikecualikan is not None:
+            path_dikecualikan = Path(path_output).with_name("Data_FSN_Persediaan_Minim_Dikecualikan.csv")
+            self.df_fsn_dikecualikan.to_csv(path_dikecualikan, index=False, encoding="utf-8-sig")
         return self
 
     # ---------- 5. Simpan ke MySQL ----------
@@ -321,7 +325,8 @@ class AnalisisFSN:
         print(f"id_periode yang dipakai : {self.id_periode}")
         print(f"Batas                   : F > {BATAS_FAST} | S >= {BATAS_SLOW} | N < {BATAS_SLOW}"
               f" (TOR {'per tahun' if NORMALISASI_TAHUNAN else 'per periode'})")
-        print(f"Produk persediaan minim : {int(self.df_fsn['Persediaan_Minim'].sum())} (cek kolom Persediaan_Minim di CSV)")
+        jumlah_dikecualikan = len(self.df_fsn_dikecualikan) if self.df_fsn_dikecualikan is not None else 0
+        print(f"Produk dikecualikan     : {jumlah_dikecualikan} (rata-rata persediaan <= {BATAS_PERSEDIAAN_MINIM} pcs; lihat Data_FSN_Persediaan_Minim_Dikecualikan.csv)")
         print("\nJumlah baris stok per awalan no_transaksi:")
         print(self.df_stok["no_transaksi"].str.extract(r"^([A-Z]+)")[0].value_counts())
         print("Jumlah produk per kelas:")
@@ -330,6 +335,6 @@ class AnalisisFSN:
 
 if __name__ == "__main__":
     analisis = AnalisisFSN(db_url=buat_mysql_url())
-    tgl_mulai, tgl_akhir_inklusif = rentang_analisis_default()
-    analisis.jalankan(tgl_mulai=tgl_mulai.isoformat(), tgl_akhir=(tgl_akhir_inklusif + timedelta(days=1)).isoformat())
+    # kosongkan tgl_mulai/tgl_akhir kalau mau pakai seluruh data di tabel stok
+    analisis.jalankan(tgl_mulai="2025-07-01", tgl_akhir="2026-08-01")
     analisis.ringkasan()
