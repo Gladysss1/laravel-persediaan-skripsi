@@ -160,7 +160,7 @@ class MatriksABCFSN:
         return self
 
     # ---------- 4. Simpan cadangan ke CSV ----------
-    def simpan_csv(self, path_output="Data_Matriks_ABC_FSN.csv"):
+    def simpan_csv(self, path_output="Data_Matriks_ABC_FSN_baru.csv"):
         self.df_matriks.to_csv(path_output, index=False, encoding="utf-8-sig")
         if len(self.df_tanpa_pasangan) > 0:
             self.df_tanpa_pasangan.to_csv(

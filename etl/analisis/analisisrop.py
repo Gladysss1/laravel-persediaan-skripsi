@@ -389,7 +389,7 @@ class AnalisisSafetyStockROP:
         return self
 
     # ---------- 8. Simpan cadangan ke CSV ----------
-    def simpan_csv(self, path_output="Data_Safety_Stock_ROP.csv"):
+    def simpan_csv(self, path_output="Data_Safety_Stock_ROP_baru.csv"):
         self.df_rop.to_csv(path_output, index=False, encoding="utf-8-sig")
         return self
 

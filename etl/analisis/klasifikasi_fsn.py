@@ -233,7 +233,7 @@ class AnalisisFSN:
         return self
 
     # ---------- 4. Simpan cadangan ke CSV ----------
-    def simpan_csv(self, path_output="Data_Klasifikasi_FSN.csv"):
+    def simpan_csv(self, path_output="Data_Klasifikasi_FSN_baru.csv"):
         self.df_fsn.to_csv(path_output, index=False, encoding="utf-8-sig")
         if self.df_fsn_dikecualikan is not None:
             path_dikecualikan = Path(path_output).with_name("Data_FSN_Persediaan_Minim_Dikecualikan.csv")
