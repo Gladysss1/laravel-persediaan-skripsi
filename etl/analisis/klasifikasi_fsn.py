@@ -1,11 +1,12 @@
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import create_engine, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from etl_config import buat_mysql_url
+from etl_config import buat_mysql_url, rentang_analisis_default
 
 # total_qty_real sudah bertanda: positif = stok masuk, negatif = stok keluar
 KOLOM_QTY = "total_qty_real"
@@ -40,7 +41,8 @@ BATAS_SLOW = 4
 # False = TOR apa adanya untuk seluruh periode.
 NORMALISASI_TAHUNAN = True
 
-# Untuk TOR, rata-rata stok di bawah 1 pcs menggunakan denominator minimum 1 pcs.
+# Untuk TOR, rata-rata stok di bawa
+# h 1 pcs menggunakan denominator minimum 1 pcs.
 # Ini mencegah rata-rata pecahan yang sangat kecil membuat TOR dan kelas F melonjak.
 BATAS_PERSEDIAAN_MINIM = 1
 
@@ -71,6 +73,8 @@ class AnalisisFSN:
         self.df_fsn = None
         self.df_fsn_dikecualikan = None
         self.qty_jual = None
+        self.nama_stok = None
+        self.nama_jual = None
         self.id_periode = None
         self.tgl_mulai = None
         self.tgl_akhir = None
@@ -112,18 +116,21 @@ class AnalisisFSN:
 
     # ---------- 2. Muat data stok dari MySQL ----------
     def muat_data(self, tgl_mulai=None, tgl_akhir=None):
-        """Ambil data dari tabel stok. Rentang: tanggal >= tgl_mulai dan tanggal < tgl_akhir."""
+        """Muat histori stok sampai akhir dan penjualan pada periode analisis."""
         query = f"""
             SELECT id_stok, no_transaksi, tanggal, kode_produk, nama_produk,
                    {KOLOM_QTY} AS qty
             FROM stok
         """
-        params = {}
+        # Ikuti cakupan skrip sebelumnya: stok hanya diambil dalam rentang
+        # analisis. Saldo awal periode diperkirakan di hitung_fsn() dari saldo
+        # kumulatif minimum dalam rentang tersebut.
+        params_stok = {}
         if tgl_mulai and tgl_akhir:
             query += " WHERE tanggal >= :mulai AND tanggal < :akhir"
-            params = {"mulai": tgl_mulai, "akhir": tgl_akhir}
+            params_stok = {"mulai": tgl_mulai, "akhir": tgl_akhir}
 
-        df = pd.read_sql(text(query), self.engine, params=params)
+        df = pd.read_sql(text(query), self.engine, params=params_stok)
         if df.empty:
             raise ValueError("Tidak ada data stok pada rentang tanggal tersebut.")
 
@@ -133,23 +140,43 @@ class AnalisisFSN:
 
         self.df_stok = df
 
+        # Samakan bentuk kode antar sumber data agar reindex tidak kehilangan
+        # produk hanya karena ada spasi di awal/akhir. Populasi tidak diambil
+        # dari master barang.
+        df["kode_produk"] = df["kode_produk"].astype("string").str.strip()
+        df["nama_produk"] = df["nama_produk"].astype("string").str.strip()
+        self.df_stok = df
+        self.nama_stok = (
+            df.dropna(subset=["kode_produk"])
+            .groupby("kode_produk")["nama_produk"].first()
+        )
+
         # kuantitas penjualan dari detail_penjualan (kolom total_qty = pcs)
         if SUMBER_QTY_JUAL == "detail_penjualan":
-            q_jual = "SELECT kode_produk, SUM(total_qty) AS qty_jual FROM detail_penjualan"
+            q_jual = (
+                "SELECT kode_produk, MAX(nama_produk) AS nama_produk, "
+                "SUM(total_qty) AS qty_jual FROM detail_penjualan"
+            )
             if tgl_mulai and tgl_akhir:
                 q_jual += " WHERE tanggal >= :mulai AND tanggal < :akhir"
+                params_jual = {"mulai": tgl_mulai, "akhir": tgl_akhir}
+            else:
+                params_jual = {}
             q_jual += " GROUP BY kode_produk"
-            df_jual = pd.read_sql(text(q_jual), self.engine, params=params)
+            df_jual = pd.read_sql(text(q_jual), self.engine, params=params_jual)
+            df_jual["kode_produk"] = df_jual["kode_produk"].astype("string").str.strip()
+            df_jual["nama_produk"] = df_jual["nama_produk"].astype("string").str.strip()
             df_jual["qty_jual"] = pd.to_numeric(df_jual["qty_jual"], errors="coerce").fillna(0)
             if df_jual.empty or (df_jual["qty_jual"] == 0).all():
                 raise ValueError(
                     "total_qty di detail_penjualan kosong. Jalankan penjualan.py dulu "
                     "supaya kolom total_qty terisi."
                 )
-            self.qty_jual = df_jual.set_index("kode_produk")["qty_jual"]
+            self.qty_jual = df_jual.groupby("kode_produk")["qty_jual"].sum()
+            self.nama_jual = df_jual.groupby("kode_produk")["nama_produk"].first()
 
         self.tgl_mulai = pd.to_datetime(tgl_mulai).date() if tgl_mulai else df["tanggal"].min().date()
-        # tgl_akhir eksklusif, jadi tanggal terakhir periode = sehari sebelumnya
+        # Batas akhir eksklusif; tanggal terakhir yang masuk adalah sehari sebelumnya.
         self.tgl_akhir = (
             (pd.to_datetime(tgl_akhir) - pd.Timedelta(days=1)).date()
             if tgl_akhir else df["tanggal"].max().date()
@@ -161,28 +188,32 @@ class AnalisisFSN:
         df = self.df_stok.copy()
         df["awalan"] = df["no_transaksi"].str.extract(r"^([A-Z]+)")[0]
 
-        # qty sudah bertanda (+ masuk, - keluar), jadi semua jenis transaksi
-        # (ABL, AJL, AAJ, ARG, ARB, dst.) ikut membentuk saldo persediaan
-        df["gerak"] = df["qty"]
+        awal = pd.Timestamp(self.tgl_mulai)
+        akhir_eksklusif = pd.Timestamp(self.tgl_akhir) + pd.Timedelta(days=1)
+        df_periode = df[(df["tanggal"] >= awal) & (df["tanggal"] < akhir_eksklusif)].copy()
 
-        # saldo persediaan berjalan per produk (urut tanggal, lalu id_stok)
+        # Saldo berjalan dihitung per transaksi dalam rentang analisis.
+        # Estimasi stok awal menggeser saldo kumulatif minimum menjadi nol,
+        # sama seperti metode pada skrip terdahulu.
+        df["gerak"] = df["qty"]
         df = df.sort_values(["kode_produk", "tanggal", "id_stok"])
         df["saldo"] = df.groupby("kode_produk")["gerak"].cumsum()
-
-        # stok awal tidak ada di data, jadi diperkirakan supaya saldo tidak pernah negatif
         stok_awal = (-df.groupby("kode_produk")["saldo"].transform("min")).clip(lower=0)
         df["persediaan"] = df["saldo"] + stok_awal
 
         rata_persediaan = df.groupby("kode_produk")["persediaan"].mean()
+        kode = pd.Index(rata_persediaan.index, name="kode_produk")
+        if kode.empty:
+            raise ValueError("Tidak ditemukan kode produk pada pergerakan stok periode analisis.")
         retur = df[df["awalan"] == PREFIX_RETUR_JUAL].groupby("kode_produk")["qty"].sum()
         if SUMBER_QTY_JUAL == "detail_penjualan":
             # total_qty dari detail_penjualan (pcs), produk tanpa penjualan = 0
-            total_jual = self.qty_jual.reindex(rata_persediaan.index).fillna(0)
-            tanpa_stok = self.qty_jual.index.difference(rata_persediaan.index)
+            total_jual = self.qty_jual.reindex(kode).fillna(0)
+            tanpa_stok = self.qty_jual.index.difference(kode)
             if len(tanpa_stok) > 0:
                 print(
-                    f"Peringatan: {len(tanpa_stok)} produk terjual tetapi tidak punya data di tabel stok "
-                    f"({self.qty_jual[tanpa_stok].sum():,.0f} pcs), tidak ikut dianalisis FSN."
+                    f"Peringatan: {len(tanpa_stok)} produk terjual tetapi tidak punya "
+                    "baris stok dalam periode; tidak masuk klasifikasi FSN."
                 )
             if KURANGI_RETUR_JUAL:
                 total_jual = (total_jual - retur.reindex(total_jual.index).fillna(0)).clip(lower=0)
@@ -192,9 +223,10 @@ class AnalisisFSN:
             if KURANGI_RETUR_JUAL:
                 keluar = keluar.add(retur, fill_value=0)
             total_jual = (-keluar).clip(lower=0).reindex(rata_persediaan.index).fillna(0)
-        nama = df.groupby("kode_produk")["nama_produk"].first()
+        # Populasi dan nama produk berasal dari baris transaksi stok.
+        nama = df.groupby("kode_produk")["nama_produk"].first().reindex(kode)
 
-        # frekuensi = jumlah transaksi penjualan (no_transaksi AJL unik) per produk dalam periode
+        # Frekuensi dihitung dari transaksi AJL pada rentang analisis.
         frekuensi = (
             df[df["awalan"] == PREFIX_PENJUALAN]
             .groupby("kode_produk")["no_transaksi"].nunique()
@@ -217,6 +249,12 @@ class AnalisisFSN:
         self.df_fsn_dikecualikan = df_fsn[df_fsn["Persediaan_Minim"]].copy()
         df_fsn = df_fsn[~df_fsn["Persediaan_Minim"]].copy()
 
+        print(
+            f"Populasi kode dari stok periode: {len(kode)}; "
+            f"persediaan minim (rata-rata <= {BATAS_PERSEDIAAN_MINIM} pcs): "
+            f"{len(self.df_fsn_dikecualikan)}; masuk klasifikasi: {len(df_fsn)}"
+        )
+
         # Nilai rata-rata persediaan yang lolos filter tetap memakai nilai asli.
         denominator_tor = df_fsn["Rata_Persediaan"].clip(lower=BATAS_PERSEDIAAN_MINIM)
 
@@ -233,7 +271,7 @@ class AnalisisFSN:
         return self
 
     # ---------- 4. Simpan cadangan ke CSV ----------
-    def simpan_csv(self, path_output="Data_Klasifikasi_FSN_baru.csv"):
+    def simpan_csv(self, path_output="Data_Klasifikasi_FSN_fix.csv"):
         self.df_fsn.to_csv(path_output, index=False, encoding="utf-8-sig")
         if self.df_fsn_dikecualikan is not None:
             path_dikecualikan = Path(path_output).with_name("Data_FSN_Persediaan_Minim_Dikecualikan.csv")
@@ -328,13 +366,20 @@ class AnalisisFSN:
         jumlah_dikecualikan = len(self.df_fsn_dikecualikan) if self.df_fsn_dikecualikan is not None else 0
         print(f"Produk dikecualikan     : {jumlah_dikecualikan} (rata-rata persediaan <= {BATAS_PERSEDIAAN_MINIM} pcs; lihat Data_FSN_Persediaan_Minim_Dikecualikan.csv)")
         print("\nJumlah baris stok per awalan no_transaksi:")
-        print(self.df_stok["no_transaksi"].str.extract(r"^([A-Z]+)")[0].value_counts())
+        dalam_periode = self.df_stok[
+            (self.df_stok["tanggal"] >= pd.Timestamp(self.tgl_mulai))
+            & (self.df_stok["tanggal"] < pd.Timestamp(self.tgl_akhir) + pd.Timedelta(days=1))
+        ]
+        print(dalam_periode["no_transaksi"].str.extract(r"^([A-Z]+)")[0].value_counts())
         print("Jumlah produk per kelas:")
         print(self.df_fsn["Kelas_FSN"].value_counts())
 
 
 if __name__ == "__main__":
     analisis = AnalisisFSN(db_url=buat_mysql_url())
-    # kosongkan tgl_mulai/tgl_akhir kalau mau pakai seluruh data di tabel stok
-    analisis.jalankan(tgl_mulai="2025-07-01", tgl_akhir="2026-08-01")
+    tgl_mulai, tgl_akhir_inklusif = rentang_analisis_default()
+    analisis.jalankan(
+        tgl_mulai=tgl_mulai.isoformat(),
+        tgl_akhir=(tgl_akhir_inklusif + timedelta(days=1)).isoformat(),
+    )
     analisis.ringkasan()

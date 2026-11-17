@@ -197,7 +197,7 @@ class AnalisisABC:
         return df.reset_index()
 
     # ---------- 4. Simpan cadangan ke CSV ----------
-    def simpan_csv(self, path_output="Data_Klasifikasi_ABC.csv"):
+    def simpan_csv(self, path_output="Data_Klasifikasi_ABC_fix.csv"):
         df_simpan = self.df_abc.copy()
         df_simpan["Periode_Awal"] = df_simpan["Periode_Awal"].dt.strftime("%Y-%m-%d")
         df_simpan["Periode_Akhir"] = df_simpan["Periode_Akhir"].dt.strftime("%Y-%m-%d")

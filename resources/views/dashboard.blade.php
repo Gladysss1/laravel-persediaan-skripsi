@@ -9,7 +9,7 @@
         ['Produk Kelas A', $abc['A'] ?? 0, 'text-blue-600'],
         ['Fast Moving', $fsn['F'] ?? 0, 'text-emerald-600'],
         ['Perlu Reorder', $rop['Reorder'] ?? 0, 'text-red-600'],
-        ['Total Produk', $abc->sum(), 'text-slate-700'],
+       ['Total Produk Matriks/ROP', $matriks->sum(), 'text-slate-700'],
     ] as [$l, $v, $c])
         <div class="bg-white rounded shadow p-4">
             <div class="text-sm text-slate-500">{{ $l }}</div>

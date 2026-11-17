@@ -41,7 +41,7 @@ def rentang_analisis_default():
     The SQL scripts convert the inclusive end date to an exclusive boundary.
     """
     _load_project_env()
-    mulai = date.fromisoformat(os.getenv("ANALYSIS_START_DATE", "2025-07-01"))
+    mulai = date.fromisoformat(os.getenv("ANALYSIS_START_DATE", "2025-08-01"))
     akhir = date.fromisoformat(os.getenv("ANALYSIS_END_DATE", "2026-07-31"))
     if mulai > akhir:
         raise ValueError("ANALYSIS_START_DATE harus sebelum atau sama dengan ANALYSIS_END_DATE.")
@@ -58,7 +58,7 @@ def buat_mysql_url():
         host=os.getenv("ETL_DB_HOST", os.getenv("DB_HOST", "127.0.0.1")),
         port=int(os.getenv("ETL_DB_PORT", os.getenv("DB_PORT", "3306"))),
         database=os.getenv(
-            "ETL_DB_DATABASE", os.getenv("DB_DATABASE", "webskripsi")
+            "ETL_DB_DATABASE", os.getenv("DB_DATABASE", "tugas_akhir")
         ),
     )
 
@@ -71,7 +71,7 @@ def koneksi_sql_server():
     """Build a pyodbc connection string for Windows trusted or SQL authentication."""
     _load_project_env()
     driver = os.getenv("SQLSERVER_DRIVER", "SQL Server")
-    server = os.getenv("SQLSERVER_SERVER", "SERVERBARU1")
+    server = os.getenv("SQLSERVER_SERVER", "localhost")
     database = os.getenv("SQLSERVER_DATABASE", "dbGrosir")
     trusted = os.getenv("SQLSERVER_TRUSTED_CONNECTION", "yes").lower() in {"yes", "true", "1"}
     format_value = lambda value: "{" + str(value or "").replace("}", "}}") + "}"

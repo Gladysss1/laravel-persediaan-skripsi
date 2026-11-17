@@ -15,7 +15,7 @@ mysql_engine = buat_mysql_engine()
 if len(sys.argv) not in (1, 3):
     raise SystemExit("Gunakan dua tanggal inklusif: penjualan.py YYYY-MM-DD YYYY-MM-DD")
 awal_default, akhir_default = rentang_analisis_default()
-# CLI end dates are inclusive. Internally the SQL range uses an exclusive end.
+# Argumen CLI dan tanggal default sama-sama memakai batas akhir inklusif.
 tgl_mulai = date.fromisoformat(sys.argv[1]) if len(sys.argv) == 3 else awal_default
 tgl_akhir_inklusif = date.fromisoformat(sys.argv[2]) if len(sys.argv) == 3 else akhir_default
 tgl_akhir = tgl_akhir_inklusif + timedelta(days=1)
@@ -99,7 +99,7 @@ query_penjualan = """
 df_penjualan = pd.read_sql(
     query_penjualan,
     conn_penjualan,
-    params=(tgl_mulai.isoformat(), tgl_akhir.isoformat()),
+        params=(tgl_mulai.isoformat(), tgl_akhir.isoformat()),
 )
 conn_penjualan.close()
 
@@ -128,7 +128,7 @@ if jumlah_dibuang > 0:
 df_penjualan = df_penjualan[mask_valid]
 if df_penjualan.empty:
     raise ValueError(
-        f"Tidak ada penjualan valid dari SQL Server pada {tgl_mulai} s/d {tgl_akhir_inklusif}. "
+        f"Tidak ada penjualan valid dari SQL Server pada {tgl_mulai} s/d {(tgl_akhir - timedelta(days=1))}. "
         "Data MySQL sebelumnya tidak diubah."
     )
 

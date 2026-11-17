@@ -91,24 +91,33 @@ class MatriksABCFSN:
         if self.id_periode_fsn is None:
             raise ValueError("Tabel klasifikasi_fsn masih kosong.")
 
+        # Jangan membuat matriks dari hasil ABC dan FSN yang berasal dari
+        # periode berbeda. Paksa kedua analisis dijalankan ulang dengan periode sama.
+        if self.id_periode_abc != self.id_periode_fsn:
+            raise ValueError(
+                "Periode ABC dan FSN berbeda: "
+                f"ABC id_periode {self.id_periode_abc}, FSN id_periode {self.id_periode_fsn}. "
+                "Jalankan ulang klasifikasi ABC dan FSN dengan rentang tanggal yang sama."
+            )
+
         # hasil periode terbaru di masing-masing tabel
         self.df_abc = pd.read_sql(text("""
-    SELECT a.id_abc, a.kode_produk, b.nama_produk,
-           a.total_penjualan_produk, a.kelas_abc
-    FROM klasifikasi_abc a
-    JOIN barang b
-      ON CONVERT(a.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
-       = CONVERT(b.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
-    WHERE a.id_periode = :p
-"""), self.engine, params={"p": self.id_periode_abc})
-        
+            SELECT a.id_abc, a.kode_produk, b.nama_produk,
+                   a.total_penjualan_produk, a.kelas_abc
+            FROM klasifikasi_abc a
+            JOIN barang b
+              ON CONVERT(a.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
+               = CONVERT(b.kode_produk USING utf8mb4) COLLATE utf8mb4_unicode_ci
+            WHERE a.id_periode = :p
+        """), self.engine, params={"p": self.id_periode_abc})
+
         self.df_fsn = pd.read_sql(text("""
             SELECT id_fsn, kode_produk, tor, kelas_fsn
             FROM klasifikasi_fsn
             WHERE id_periode = :p
         """), self.engine, params={"p": self.id_periode_fsn})
 
-        # tampilkan periode yang dipakai; beri peringatan kalau berbeda
+        # Tampilkan periode yang dipakai untuk memastikan sumber matriks seragam.
         periode = pd.read_sql(text(
             "SELECT id_periode, tanggal_mulai, tanggal_akhir FROM periode_analisis "
             "WHERE id_periode IN (:a, :f)"
@@ -122,12 +131,6 @@ class MatriksABCFSN:
 
         self.periode_abc = teks_periode(self.id_periode_abc)
         self.periode_fsn = teks_periode(self.id_periode_fsn)
-        if self.id_periode_abc != self.id_periode_fsn:
-            print(
-                "Peringatan: ABC dan FSN memakai periode berbeda.\n"
-                f"  ABC: id_periode {self.id_periode_abc} ({self.periode_abc})\n"
-                f"  FSN: id_periode {self.id_periode_fsn} ({self.periode_fsn})"
-            )
         return self
 
     # ---------- 3. Susun matriks ----------
@@ -160,7 +163,7 @@ class MatriksABCFSN:
         return self
 
     # ---------- 4. Simpan cadangan ke CSV ----------
-    def simpan_csv(self, path_output="Data_Matriks_ABC_FSN_baru.csv"):
+    def simpan_csv(self, path_output="Data_Matriks_ABC_FSN_fix.csv"):
         self.df_matriks.to_csv(path_output, index=False, encoding="utf-8-sig")
         if len(self.df_tanpa_pasangan) > 0:
             self.df_tanpa_pasangan.to_csv(

@@ -11,7 +11,7 @@ return [
     'python_hash_seed' => env('PYTHONHASHSEED', '0'),
 
     'analysis_period' => [
-        'start' => env('ANALYSIS_START_DATE', '2025-07-01'),
+        'start' => env('ANALYSIS_START_DATE', '2025-08-01'),
         'end' => env('ANALYSIS_END_DATE', '2026-07-31'),
     ],
 
