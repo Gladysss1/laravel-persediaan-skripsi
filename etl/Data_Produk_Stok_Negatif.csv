@@ -1,0 +1,2 @@
+﻿id_periode,kode_produk,id_produk_supplier,id_matriks,kategori_matriks,rata_rata_penjualan,std_penjualan,lead_time,service_level,safety_stock,reorder_point,tanggal_mulai_data,tanggal_akhir_data,status_reorder,stok_saat_ini,stok_satuan
+2,FFFFCR,,33637,CN,2.96,30.02,7,0.8,67,88,2025-08-01,2026-07-31,Reorder,-240.0,0 PCS

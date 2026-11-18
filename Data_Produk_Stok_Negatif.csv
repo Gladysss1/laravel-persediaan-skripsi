@@ -1,0 +1,5 @@
+﻿kode_produk,rata_rata_penjualan,std_penjualan,id_matriks,kategori_matriks,id_produk_supplier,lead_time,service_level,z,safety_stock,reorder_point,stok_saat_ini,status_reorder,satuan,satuan_2,satuan_3,nisi,nisi_2,stok_satuan
+SSPMTT@500,287.12,1066.74,33133,BF,4595.0,2,0.975,1.9599639845400536,2957,3532,-220.0,Reorder,DOS,RTG,PCS,10.0,10.0,0 PCS
+AFJMMC,129.92,474.02,33217,BS,4481.0,6,0.95,1.6448536269514715,1910,2690,-60.0,Reorder,DOS,PAK,PCS,6.0,10.0,0 PCS
+FFFFCR,2.96,30.02,33637,CN,,7,0.8,0.8416212335729144,67,88,-240.0,Reorder,DOS,RTG,PCS,12.0,10.0,0 PCS
+SSPMTMN@500,153.97,631.21,33700,CS,4212.0,2,0.9,1.2815515655446008,1144,1452,-4000.0,Reorder,DOS,RTG,PCS,10.0,10.0,0 PCS

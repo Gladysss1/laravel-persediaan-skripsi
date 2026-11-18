@@ -390,7 +390,24 @@ class AnalisisSafetyStockROP:
 
     # ---------- 8. Simpan cadangan ke CSV ----------
     def simpan_csv(self, path_output="Data_Safety_Stock_ROP_fix.csv"):
-        self.df_rop.to_csv(path_output, index=False, encoding="utf-8-sig")
+        output = Path(path_output)
+        folder_output = output.parent
+
+        # CSV utama tetap berisi semua produk yang dihitung ROP-nya.
+        self.df_rop.to_csv(output, index=False, encoding="utf-8-sig")
+
+        # Pisahkan produk dengan stok tepat nol dan stok negatif untuk pemeriksaan.
+        stok = pd.to_numeric(self.df_rop["stok_saat_ini"], errors="coerce")
+        df_stok_nol = self.df_rop.loc[stok.eq(0)].copy()
+        df_stok_negatif = self.df_rop.loc[stok.lt(0)].copy()
+
+        file_stok_nol = folder_output / "Data_Produk_Stok_Nol.csv"
+        file_stok_negatif = folder_output / "Data_Produk_Stok_Negatif.csv"
+        df_stok_nol.to_csv(file_stok_nol, index=False, encoding="utf-8-sig")
+        df_stok_negatif.to_csv(file_stok_negatif, index=False, encoding="utf-8-sig")
+
+        print(f"CSV stok nol     : {len(df_stok_nol)} produk -> {file_stok_nol}")
+        print(f"CSV stok negatif : {len(df_stok_negatif)} produk -> {file_stok_negatif}")
         return self
 
     # ---------- 9. Simpan ke MySQL ----------
