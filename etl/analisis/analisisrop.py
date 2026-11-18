@@ -24,7 +24,10 @@ def format_satuan(pcs, s1, s2, s3, nisi, nisi_2):
     """
     if pd.isna(pcs):
         return None
-    pcs = max(int(round(pcs)), 0)
+    pcs = int(round(pcs))
+    # Tampilkan saldo negatif apa adanya; jangan mengubahnya menjadi 0 PCS.
+    if pcs < 0:
+        return f"{pcs} {s3 or 'PCS'}"
     nisi = int(nisi) if pd.notna(nisi) and nisi > 0 else 1
     nisi_2 = int(nisi_2) if pd.notna(nisi_2) and nisi_2 > 0 else 1
 
@@ -389,14 +392,23 @@ class AnalisisSafetyStockROP:
         return self
 
     # ---------- 8. Simpan cadangan ke CSV ----------
-    def simpan_csv(self, path_output="Data_Safety_Stock_ROP_fix.csv"):
-        output = Path(path_output)
-        folder_output = output.parent
+    def simpan_csv(self, path_output=None):
+        # Selalu simpan hasil standar di etl/csv agar tidak tertukar dengan
+        # CSV lama di folder kerja atau Downloads.
+        folder_output = Path(__file__).resolve().parents[1] / "csv"
+        if path_output is None:
+            output = folder_output / "Data_Safety_Stock_ROP_fix.csv"
+        else:
+            output = Path(path_output)
+            if not output.is_absolute():
+                output = folder_output / output
+            folder_output = output.parent
+        folder_output.mkdir(parents=True, exist_ok=True)
 
-        # CSV utama tetap berisi semua produk yang dihitung ROP-nya.
+        # CSV utama tetap berisi semua produk ROP.
         self.df_rop.to_csv(output, index=False, encoding="utf-8-sig")
 
-        # Pisahkan produk dengan stok tepat nol dan stok negatif untuk pemeriksaan.
+        # Buat CSV terpisah untuk pemeriksaan produk bersaldo nol dan negatif.
         stok = pd.to_numeric(self.df_rop["stok_saat_ini"], errors="coerce")
         df_stok_nol = self.df_rop.loc[stok.eq(0)].copy()
         df_stok_negatif = self.df_rop.loc[stok.lt(0)].copy()
@@ -406,8 +418,9 @@ class AnalisisSafetyStockROP:
         df_stok_nol.to_csv(file_stok_nol, index=False, encoding="utf-8-sig")
         df_stok_negatif.to_csv(file_stok_negatif, index=False, encoding="utf-8-sig")
 
-        print(f"CSV stok nol     : {len(df_stok_nol)} produk -> {file_stok_nol}")
-        print(f"CSV stok negatif : {len(df_stok_negatif)} produk -> {file_stok_negatif}")
+        print(f"CSV ROP          : {output.resolve()}")
+        print(f"CSV stok nol     : {len(df_stok_nol)} produk -> {file_stok_nol.resolve()}")
+        print(f"CSV stok negatif : {len(df_stok_negatif)} produk -> {file_stok_negatif.resolve()}")
         return self
 
     # ---------- 9. Simpan ke MySQL ----------
@@ -561,6 +574,7 @@ class AnalisisSafetyStockROP:
         print(f"Total produk             : {len(d)}")
         print(f"Data stok dipakai dari   : {self.df_stok['tanggal'].min().date()} s/d {self.tgl_akhir.date()}")
         print(f"Produk dengan stok = 0   : {int((d['stok_saat_ini'] == 0).sum())}")
+        print(f"Produk dengan stok < 0   : {int((d['stok_saat_ini'] < 0).sum())}")
         print("Status reorder:")
         print(d["status_reorder"].value_counts())
         print("\nStatus reorder per kategori matriks:")
