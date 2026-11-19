@@ -415,13 +415,36 @@ class AnalisisSafetyStockROP:
 
         file_stok_nol = folder_output / "Data_Produk_Stok_Nol.csv"
         file_stok_negatif = folder_output / "Data_Produk_Stok_Negatif.csv"
+        file_ringkasan = folder_output / "Ringkasan_Status_ROP_per_Kategori.csv"
         df_stok_nol.to_csv(file_stok_nol, index=False, encoding="utf-8-sig")
         df_stok_negatif.to_csv(file_stok_negatif, index=False, encoding="utf-8-sig")
+        self.ringkasan_status_kategori().to_csv(file_ringkasan, index=False, encoding="utf-8-sig")
 
         print(f"CSV ROP          : {output.resolve()}")
         print(f"CSV stok nol     : {len(df_stok_nol)} produk -> {file_stok_nol.resolve()}")
         print(f"CSV stok negatif : {len(df_stok_negatif)} produk -> {file_stok_negatif.resolve()}")
+        print(f"CSV ringkasan    : {file_ringkasan.resolve()}")
         return self
+
+    def ringkasan_status_kategori(self):
+        """Ringkas status Aman/Reorder dan kondisi stok untuk tiap kategori matriks."""
+        df = self.df_rop.copy()
+        df["stok_saat_ini"] = pd.to_numeric(df["stok_saat_ini"], errors="coerce")
+        ringkasan = df.groupby("kategori_matriks", dropna=False).agg(
+            total_produk=("kode_produk", "size"),
+            reorder=("status_reorder", lambda nilai: int(nilai.eq("Reorder").sum())),
+            aman=("status_reorder", lambda nilai: int(nilai.eq("Aman").sum())),
+            stok_nol=("stok_saat_ini", lambda nilai: int(nilai.eq(0).sum())),
+            stok_negatif=("stok_saat_ini", lambda nilai: int(nilai.lt(0).sum())),
+        ).reset_index()
+        ringkasan["stok_kurang_sama_dengan_nol"] = (
+            ringkasan["stok_nol"] + ringkasan["stok_negatif"]
+        )
+        urutan = {kode: no for no, kode in enumerate(
+            ["AF", "AS", "AN", "BF", "BS", "BN", "CF", "CS", "CN"]
+        )}
+        ringkasan["_urutan"] = ringkasan["kategori_matriks"].map(urutan).fillna(99)
+        return ringkasan.sort_values(["_urutan", "kategori_matriks"]).drop(columns="_urutan")
 
     # ---------- 9. Simpan ke MySQL ----------
     def simpan_ke_sql(self):
@@ -578,7 +601,7 @@ class AnalisisSafetyStockROP:
         print("Status reorder:")
         print(d["status_reorder"].value_counts())
         print("\nStatus reorder per kategori matriks:")
-        print(pd.crosstab(d["kategori_matriks"], d["status_reorder"]))
+        print(self.ringkasan_status_kategori().to_string(index=False))
         print("\nRata-rata per kategori matriks:")
         print(d.groupby("kategori_matriks")[["service_level", "safety_stock", "reorder_point"]].mean().round(2))
 

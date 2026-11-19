@@ -9,7 +9,7 @@
         ['Produk Kelas A', $abc['A'] ?? 0, 'text-blue-600'],
         ['Fast Moving', $fsn['F'] ?? 0, 'text-emerald-600'],
         ['Perlu Reorder', $rop['Reorder'] ?? 0, 'text-red-600'],
-       ['Total Produk Matriks/ROP', $matriks->sum(), 'text-slate-700'],
+        ['Total Produk Matriks/ROP', $matriks->sum(), 'text-slate-700'],
     ] as [$l, $v, $c])
         <div class="bg-white rounded shadow p-4">
             <div class="text-sm text-slate-500">{{ $l }}</div>
@@ -35,6 +35,57 @@
             @endforeach
         </div>
     </div>
+</div>
+
+<div class="bg-white rounded shadow mb-6 overflow-x-auto">
+    <div class="p-4">
+        <div class="font-medium">Ringkasan Status ROP per Kategori Matriks</div>
+        <div class="text-xs text-slate-500 mt-1">Klik jumlah untuk membuka daftar produk dengan kategori dan status tersebut.</div>
+    </div>
+    <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-left">
+            <tr>
+                <th class="p-3">Kategori Matriks</th>
+                <th class="p-3 text-right">Reorder</th>
+                <th class="p-3 text-right">Aman</th>
+                <th class="p-3 text-right">Total Produk</th>
+            </tr>
+        </thead>
+        <tbody>
+        @forelse ($statusMatriks as $baris)
+            <tr class="border-t hover:bg-slate-50">
+                <td class="p-3 font-medium">{{ $baris->kategori_matriks }}</td>
+                <td class="p-3 text-right">
+                    <a class="text-red-600 hover:underline" href="{{ route('rop', ['kategori' => $baris->kategori_matriks, 'status' => 'Reorder']) }}">
+                        {{ number_format($baris->reorder, 0, ',', '.') }}
+                    </a>
+                </td>
+                <td class="p-3 text-right">
+                    <a class="text-emerald-700 hover:underline" href="{{ route('rop', ['kategori' => $baris->kategori_matriks, 'status' => 'Aman']) }}">
+                        {{ number_format($baris->aman, 0, ',', '.') }}
+                    </a>
+                </td>
+                <td class="p-3 text-right">
+                    <a class="text-blue-700 hover:underline" href="{{ route('rop', ['kategori' => $baris->kategori_matriks]) }}">
+                        {{ number_format($baris->total_produk, 0, ',', '.') }}
+                    </a>
+                </td>
+            </tr>
+        @empty
+            <tr><td colspan="4" class="p-4 text-center text-slate-400">Ringkasan ROP per kategori belum tersedia.</td></tr>
+        @endforelse
+        </tbody>
+        @if ($statusMatriks->isNotEmpty())
+            <tfoot class="bg-slate-50 font-semibold border-t">
+                <tr>
+                    <td class="p-3">Total</td>
+                    <td class="p-3 text-right">{{ number_format($statusMatriks->sum('reorder'), 0, ',', '.') }}</td>
+                    <td class="p-3 text-right">{{ number_format($statusMatriks->sum('aman'), 0, ',', '.') }}</td>
+                    <td class="p-3 text-right">{{ number_format($statusMatriks->sum('total_produk'), 0, ',', '.') }}</td>
+                </tr>
+            </tfoot>
+        @endif
+    </table>
 </div>
 
 <div class="bg-white rounded shadow p-4 mb-6">

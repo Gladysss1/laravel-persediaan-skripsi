@@ -10,7 +10,7 @@ class DashboardController extends PersediaanBaseController
 {
     public function dashboard()
     {
-        $mulai = config('etl.analysis_period.start', '2025-07-01');
+        $mulai = config('etl.analysis_period.start', '2025-08-01');
         $akhir = config('etl.analysis_period.end', '2026-07-31');
         $idTahunan = DB::table('periode_analisis')
             ->whereDate('tanggal_mulai', $mulai)
@@ -43,6 +43,18 @@ class DashboardController extends PersediaanBaseController
             ->where('a.id_periode', $this->id)->selectRaw('m.kategori_matriks k, COUNT(*) n')
             ->groupBy('m.kategori_matriks')->pluck('n', 'k');
 
+        // Ringkasan yang sama dengan tabulasi Excel: status Aman/Reorder per kategori.
+        $statusMatriks = DB::table('rekomendasi_rop')
+            ->where('id_periode', $this->id)
+            ->whereNotNull('kategori_matriks')
+            ->selectRaw("kategori_matriks,
+                SUM(CASE WHEN status_reorder = 'Reorder' THEN 1 ELSE 0 END) AS reorder,
+                SUM(CASE WHEN status_reorder = 'Aman' THEN 1 ELSE 0 END) AS aman,
+                COUNT(*) AS total_produk")
+            ->groupBy('kategori_matriks')
+            ->orderByRaw("FIELD(kategori_matriks, 'AF','AS','AN','BF','BS','BN','CF','CS','CN')")
+            ->get();
+
         $perlu = DB::table('rekomendasi_rop as r')->join('barang as b', function ($join) {
             $join->whereRaw('b.kode_produk COLLATE utf8mb4_unicode_ci = r.kode_produk COLLATE utf8mb4_unicode_ci');
         })
@@ -61,7 +73,7 @@ class DashboardController extends PersediaanBaseController
             ->orderByDesc('a.total_penjualan_produk')->limit(10)
             ->select('b.nama_produk', 'a.total_penjualan_produk')->get();
 
-        return view('dashboard', ['top' => $top, 'analisisNotice' => $notice] + [
+        return view('dashboard', ['top' => $top, 'analisisNotice' => $notice, 'statusMatriks' => $statusMatriks] + [
             'abc' => $hitung('klasifikasi_abc', 'kelas_abc'), 'fsn' => $hitung('klasifikasi_fsn', 'kelas_fsn'),
             'rop' => $hitung('rekomendasi_rop', 'status_reorder'), 'matriks' => $matriks, 'perlu' => $perlu,
         ]);
@@ -107,7 +119,7 @@ class DashboardController extends PersediaanBaseController
             'ETL_DB_DATABASE' => config('database.connections.mysql.database', 'webskripsi'),
             'ETL_DB_USERNAME' => config('database.connections.mysql.username', 'root'),
             'ETL_DB_PASSWORD' => config('database.connections.mysql.password', ''),
-            'ANALYSIS_START_DATE' => config('etl.analysis_period.start', '2025-07-01'),
+            'ANALYSIS_START_DATE' => config('etl.analysis_period.start', '2025-08-01'),
             'ANALYSIS_END_DATE' => config('etl.analysis_period.end', '2026-07-31'),
             'SQLSERVER_DRIVER' => config('etl.sqlserver.driver', 'SQL Server'),
             'SQLSERVER_SERVER' => config('etl.sqlserver.server', 'SERVERBARU1'),

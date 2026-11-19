@@ -5,14 +5,23 @@
     @unless (isset($tanpaCari))
         <input name="q" value="{{ request('q') }}" placeholder="Cari kode / nama produk" class="border rounded px-3 py-2 w-72 bg-white">
     @endunless
-    @isset($filter)
+    @if (isset($filters))
+        @foreach ($filters as [$filterName, $filterLabel, $filterOptions])
+            <select name="{{ $filterName }}" class="border rounded px-3 py-2 bg-white">
+                <option value="">Semua {{ $filterLabel }}</option>
+                @foreach ($filterOptions as $value => $label)
+                    <option value="{{ $value }}" @selected(request($filterName) === (string) $value)>{{ $label }}</option>
+                @endforeach
+            </select>
+        @endforeach
+    @elseif (isset($filter))
         <select name="{{ $filter[0] }}" class="border rounded px-3 py-2 bg-white">
             <option value="">Semua</option>
             @foreach ($filter[1] as $v => $l)
                 <option value="{{ $v }}" @selected(request($filter[0]) === (string) $v)>{{ $l }}</option>
             @endforeach
         </select>
-    @endisset
+    @endif
     @unless (isset($tanpaCari)) <button class="bg-blue-600 text-white rounded px-4">Cari</button> @endunless
     <a href="{{ request()->fullUrlWithQuery(['export' => 1, 'page' => null]) }}" class="ml-auto bg-emerald-600 text-white rounded px-4 py-2">Ekspor Excel</a>
 </form>
